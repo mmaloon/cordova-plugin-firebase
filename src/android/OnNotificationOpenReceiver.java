@@ -18,7 +18,7 @@ public class OnNotificationOpenReceiver extends BroadcastReceiver {
         Bundle data = intent.getExtras();
         launchIntent.putExtras(data);
         context.startActivity(launchIntent);
-        FirebasePlugin.onNotificationOpen(data);
+//        FirebasePlugin.onNotificationOpen(data);
 
     }
 }

@@ -17,6 +17,7 @@ import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigValue;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
+import org.apache.cordova.PluginResult;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -42,6 +43,7 @@ public class FirebasePlugin extends CordovaPlugin {
     protected static final String KEY = "badge";
 
     private static WeakReference<CallbackContext> callbackContext;
+    private static WeakReference<PluginResult> pendingResult;
 
     @Override
     protected void pluginInitialize() {
@@ -110,26 +112,37 @@ public class FirebasePlugin extends CordovaPlugin {
 
     private void registerOnNotificationOpen(final CallbackContext callbackContext) {
         FirebasePlugin.callbackContext = new WeakReference<CallbackContext>(callbackContext);
+        if (FirebasePlugin.pendingResult != null && FirebasePlugin.pendingResult.get() != null) {
+            callbackContext.sendPluginResult(FirebasePlugin.pendingResult.get());
+            FirebasePlugin.pendingResult = null;
+        }
     }
 
     public static void onNotificationOpen(Bundle bundle) {
-        if(FirebasePlugin.callbackContext == null ){
-            return;
-        }
-        final CallbackContext callbackContext = FirebasePlugin.callbackContext.get();
-        if (callbackContext != null && bundle != null) {
-            JSONObject json = new JSONObject();
-            Set<String> keys = bundle.keySet();
-            for (String key : keys) {
-                try {
-                    json.put(key, bundle.get(key));
-                } catch (JSONException e) {
-                    callbackContext.error(e.getMessage());
-                    return;
-                }
+        if (bundle == null) { return; }
+        JSONObject json = new JSONObject();
+        Set<String> keys = bundle.keySet();
+        for (String key : keys) {
+            try {
+                json.put(key, bundle.get(key));
+            } catch (JSONException e) {
+                PluginResult result = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+                result.setKeepCallback(true);
+                handleNotificationOpenResult(result);
+                return;
             }
+        }
+        PluginResult result = new PluginResult(PluginResult.Status.OK, json);
+        result.setKeepCallback(true);
+        handleNotificationOpenResult(result);
+    }
 
-            callbackContext.success(json);
+    private static void handleNotificationOpenResult(PluginResult result) {
+        if (FirebasePlugin.callbackContext == null || FirebasePlugin.callbackContext.get() == null) {
+            FirebasePlugin.pendingResult = new WeakReference<PluginResult>(result);
+        }
+        else {
+            FirebasePlugin.callbackContext.get().sendPluginResult(result);
         }
     }
 
@@ -137,6 +150,11 @@ public class FirebasePlugin extends CordovaPlugin {
     public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         FirebasePlugin.onNotificationOpen(intent.getExtras());
+    }
+    public void onStart() {
+        super.onStart();
+        Intent startupIntent = cordova.getActivity().getIntent();
+        FirebasePlugin.onNotificationOpen(startupIntent.getExtras());
     }
 
     private void getInstanceId(final CallbackContext callbackContext) {
@@ -210,7 +228,7 @@ public class FirebasePlugin extends CordovaPlugin {
         });
     }
 
-    private void logEvent(final CallbackContext callbackContext, final String name, final JSONObject params) {
+    private void logEvent(final CallbackContext callbackContext, final String name, final JSONObject params) throws JSONException {
         final Bundle bundle = new Bundle();
         Iterator iter = params.keys();
         while(iter.hasNext()){
